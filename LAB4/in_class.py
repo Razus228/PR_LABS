@@ -1,106 +1,74 @@
 import socket
-import signal
-import sys
-import json
 import re
-from time import sleep
-import threading
+import json
 
-# define the server's IP and port
-HOST = "127.0.0.1"
-PORT = 8008
+# Define your web server address and port
+SERVER_ADDRESS = "localhost"
+SERVER_PORT = 8080
 
-# create a socket object ip4, tcp
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# Define the routes to the product pages
+PRODUCT_LISTING_PAGE = '/products-listing'
+PRODUCT_DETAILS_REGEX = r'/product/(\d+)'
 
-# bind the socket to the specified host and port
-server_socket.bind((HOST, PORT))
+def send_request(path):
+    # Create a socket connection to the web server
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect((SERVER_ADDRESS, SERVER_PORT))
 
-# listen for incoming connections
-server_socket.listen(5)
-print(f"[*] Listening as {HOST}:{PORT}")
+    # Send an HTTP GET request
+    request = f"GET {path} HTTPS/1.1\r\nHost: {SERVER_ADDRESS}\r\n\r\n"
+    client_socket.send(request.encode())
 
+    # Receive and parse the HTTP response
+    response = b""
+    while True:
+        data = client_socket.recv(1024)
+        if not data:
+            break
+        response += data
 
-# Function to handle Ctrl+C and other signals
-def signal_handler(sig, frame):
-    print("\nShutting down the server...")
-    server_socket.close()
-    sys.exit(0)
-
-
-# Register the signal handler
-signal.signal(signal.SIGINT, signal_handler)
-
-
-# function to handle clients' requests
-def handle_request(client_socket):
-    # Receive and print the client's request data
-    request_data = client_socket.recv(1024).decode('utf-8')
-    print(f"Received Request:\n{request_data}")
-
-    # Parse the request to get the HTTP method and path
-    request_lines = request_data.split('\n')
-    request_line = request_lines[0].strip().split()
-    method = request_line[0]
-    path = request_line[1]
-
-    # Initialize the response content and status code
-    response_content = ''
-    status_code = 200
-
-    with open('LAB4\products.json', 'r') as file:
-        products_data = json.load(file)
-
-    print(products_data)
-    # Define a simple routing mechanism
-    if path == '/':
-        response_content = '<h1>Home</h1>'
-        response_content += '<a href="/product">Product</a><br></br>'
-        response_content += '<a href="/about">About</a><br></br>'
-        response_content += '<a href="/faq">FAQ</a>'
-    elif path == '/about':
-        response_content = '<h1>About</h1>'
-    elif path == '/faq':
-        response_content = '<h1>FAQ</h1>'
-    elif path == '/product':
-        response_content = '<h1>Product</h1>'
-        for item in products_data:
-            response_content += '<a href="/product/' + str(item['id']) + '">'+item["name"]+'</a> <br></br>'
-    elif re.match('/product/\d+',path):
-
-        list = path.split('/')
-        index =int(list[2]) -1
-        if(index >= len(products_data)):
-            response_content = '<h1>404 Not Found</h1'
-        else:
-            name = products_data[index]['name']
-            price = products_data[index]['price']
-            description = products_data[index]['description']
-            author = products_data[index]['author']
-            response_content = '<h1>'+name+'</h1>'
-            response_content += '<h2>' + str(price) + '</h2>'
-            response_content += '<p>' + description + '</p>'
-            response_content += '<p>' + author + '</p>'
-
-    else:
-        response_content = '<h1>404 Not Found</h1'
-        status_code = 404
-
-    # Prepare the HTTP response
-    response = f'HTTP/1.1 {status_code} OK\nContent-Type: text/html\n\n{response_content}'
-    client_socket.send(response.encode('utf-8'))
-
-    # Close the client socket
+    # Close the socket connection
     client_socket.close()
 
+    return response.decode()
 
-while True:
-    # Accept incoming client connections
-    client_socket, client_address = server_socket.accept()
-    print(f"Accepted connection from {client_address[0]}:{client_address[1]}")
-    try:
-        # Handle the client's request in a separate thread
-        handle_request(client_socket)
-    except KeyboardInterrupt:
-        # Handle Ctrl+C interruption here (if needed)
-        pass
+def parse_product_details(page_content):
+    # Use regular expressions to extract product details from the product page
+    product_details = {}
+    name_match = re.search(r'<h1>(.*?)</h1>', page_content)
+    if name_match:
+        product_details["name"] = name_match.group(1)
+
+    author_match = re.search(r'Author: (.*?)<', page_content)
+    if author_match:
+        product_details["author"] = author_match.group(1)
+
+    price_match = re.search(r'Price: (\d+\.\d+)', page_content)
+    if price_match:
+        product_details["price"] = float(price_match.group(1))
+
+    description_match = re.search(r'<p>(.*?)</p>', page_content)
+    if description_match:
+        product_details["description"] = description_match.group(1)
+
+    return product_details
+
+def main():
+    # Send a request to the product listing page to get the list of product routes
+    product_listing_page_content = send_request(PRODUCT_LISTING_PAGE)
+
+    # Find product routes using regular expressions
+    product_routes = re.findall(PRODUCT_DETAILS_REGEX, product_listing_page_content)
+
+    # Iterate over product routes and fetch product details
+    product_data = []
+    for route in product_routes:
+        product_page_content = send_request(f'/product/{route}')
+        product_details = parse_product_details(product_page_content)
+        product_data.append(product_details)
+
+    # Print or save the product data as needed
+    print(json.dumps(product_data, indent=4))
+
+if __name__ == "__main__":
+    main()
