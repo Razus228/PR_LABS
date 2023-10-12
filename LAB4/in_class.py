@@ -3,7 +3,7 @@ import socketserver
 import json
 import re
 
-with open('products.json', 'r') as f:
+with open('LAB4/products.json', 'r') as f:
     products = json.load(f)
 
 class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):

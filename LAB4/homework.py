@@ -2,17 +2,15 @@ import socket
 import re
 
 def establish_tcp_connection(path):
-    HOST = "127.0.0.1"
-    PORT = 12345
     #Establish a TCP connection and retrieve content from the specified path.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((HOST, PORT))
+        s.connect(("localhost", 6666))
         headers = {
-            "Host": "127.0.0.1",
+            "Host": "localhost",
             "User-Agent": "TCP_Parser/1.0"
         }
         headers_str = "\r\n".join(f"{k}: {v}" for k, v in headers.items())
-        request = f"GET {path} HTTPS/1.1\r\n{headers_str}\r\n\r\n"
+        request = f"GET {path} HTTP/1.1\r\n{headers_str}\r\n\r\n"
         s.sendall(request.encode())
         response = s.recv(4096).decode()
         return response.split("\r\n\r\n", 1)[-1]  # Return only the content, excluding headers
