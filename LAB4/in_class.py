@@ -1,74 +1,56 @@
-import socket
-import re
+import http.server
+import socketserver
 import json
+import re
 
-# Define your web server address and port
-SERVER_ADDRESS = "localhost"
-SERVER_PORT = 8080
+with open('products.json', 'r') as f:
+    products = json.load(f)
 
-# Define the routes to the product pages
-PRODUCT_LISTING_PAGE = '/products-listing'
-PRODUCT_DETAILS_REGEX = r'/product/(\d+)'
+class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        print(f"Received request for path: {self.path}")
 
-def send_request(path):
-    # Create a socket connection to the web server
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((SERVER_ADDRESS, SERVER_PORT))
+        if self.path == '/':
+            self._send_page(content=b"Home Page")
+            return
 
-    # Send an HTTP GET request
-    request = f"GET {path} HTTPS/1.1\r\nHost: {SERVER_ADDRESS}\r\n\r\n"
-    client_socket.send(request.encode())
+        if self.path == '/about':
+            self._send_page(content=b"About Us Page")
+            return
 
-    # Receive and parse the HTTP response
-    response = b""
-    while True:
-        data = client_socket.recv(1024)
-        if not data:
-            break
-        response += data
+        if self.path == '/contacts':
+            self._send_page(content=b"Contacts Page")
+            return
 
-    # Close the socket connection
-    client_socket.close()
+        if self.path == '/products':
+            product_links = [f"<li><a href='/product/{i}'>{product['name']}</a></li>" for i, product in enumerate(products)]
+            content = f"<ul>{''.join(product_links)}</ul>".encode()
+            self._send_page(content=content)
+            return
 
-    return response.decode()
+        match = re.match(r'/product/(\d+)', self.path)
+        if match:
+            product_id = int(match.group(1))
+            if 0 <= product_id < len(products):
+                product = products[product_id]
+                content = f"<h1>{product['name']}</h1><p>{product['description']}</p><p>Price: ${product['price']}</p>".encode()
+                self._send_page(content=content)
+                return
+            else:
+                self._send_page(status_code=404, content=b"Product not found")
+                return
 
-def parse_product_details(page_content):
-    # Use regular expressions to extract product details from the product page
-    product_details = {}
-    name_match = re.search(r'<h1>(.*?)</h1>', page_content)
-    if name_match:
-        product_details["name"] = name_match.group(1)
+        self._send_page(status_code=404, content=b"404 Not Found")
+        return
 
-    author_match = re.search(r'Author: (.*?)<', page_content)
-    if author_match:
-        product_details["author"] = author_match.group(1)
+    def _send_page(self, status_code=200, content_type="text/html", content=b""):
+        self.send_response(status_code)
+        self.send_header("Content-type", content_type)
+        self.end_headers()
+        self.wfile.write(content)
+        print(f"Responded with status: {status_code}")
+        print("--------------------------------------")
 
-    price_match = re.search(r'Price: (\d+\.\d+)', page_content)
-    if price_match:
-        product_details["price"] = float(price_match.group(1))
 
-    description_match = re.search(r'<p>(.*?)</p>', page_content)
-    if description_match:
-        product_details["description"] = description_match.group(1)
-
-    return product_details
-
-def main():
-    # Send a request to the product listing page to get the list of product routes
-    product_listing_page_content = send_request(PRODUCT_LISTING_PAGE)
-
-    # Find product routes using regular expressions
-    product_routes = re.findall(PRODUCT_DETAILS_REGEX, product_listing_page_content)
-
-    # Iterate over product routes and fetch product details
-    product_data = []
-    for route in product_routes:
-        product_page_content = send_request(f'/product/{route}')
-        product_details = parse_product_details(product_page_content)
-        product_data.append(product_details)
-
-    # Print or save the product data as needed
-    print(json.dumps(product_data, indent=4))
-
-if __name__ == "__main__":
-    main()
+with socketserver.TCPServer(("localhost", 8081), MyHttpRequestHandler) as httpd:
+    httpd.serve_forever()
